@@ -24,4 +24,7 @@ namespace StringHelper
 	std::string VFormat(const char* format, va_list ap);
 	std::wstring Format(const wchar_t* format, ...);
 	std::wstring VFormat(const wchar_t* format, va_list ap);
+
+	std::string removeSpecificChar(const std::string& input, char charToRemove);
+	std::wstring removeSpecificChar(const std::wstring& input, wchar_t charToRemove);
 }

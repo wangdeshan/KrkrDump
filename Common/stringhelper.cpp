@@ -287,4 +287,22 @@ namespace StringHelper
 
 		return output;
 	}
+
+	std::string removeSpecificChar(const std::string& input, char charToRemove) {
+		std::string result = input;
+		size_t pos;
+		while ((pos = result.find(charToRemove)) != std::string::npos) {
+			result.erase(pos, 1);
+		}
+		return result;
+	}
+
+	std::wstring removeSpecificChar(const std::wstring& input, wchar_t charToRemove) {
+		std::wstring result = input;
+		size_t pos;
+		while ((pos = result.find(charToRemove)) != std::wstring::npos) {
+			result.erase(pos, 1);
+		}
+		return result;
+	}
 }

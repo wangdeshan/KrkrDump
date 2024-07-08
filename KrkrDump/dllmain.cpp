@@ -14,6 +14,8 @@
 #include <vector>
 #include <unordered_set>
 #include <shlobj.h>
+#include <Psapi.h>
+
 
 #pragma warning ( push )
 #pragma warning ( disable : 4100 4201 4457 )
@@ -28,13 +30,33 @@ static HMODULE g_hDLL;
 
 static std::wstring g_exePath;
 static std::wstring g_dllPath;
+static std::wstring g_gamePath;
+static std::wstring g_xp3base;
 
 static Log::Logger g_logger;
 
+static std::wstring g_lastxp3name;
+
 static int g_logLevel;
 static bool g_truncateLog;
-static bool g_tvpStubInitialized = false;
+static bool g_decryptSimpleCrypt;
 
+static bool g_patchNoProtocol;
+static bool g_enablePatch;
+static bool g_enableExtract;
+static bool g_SkipExists;
+
+static std::wstring g_outputPath;
+
+static std::list<std::wstring> g_patchProtocols;
+static std::list<std::wstring> g_patchArchives;
+static std::list<std::wstring> g_patchDirectory;
+
+static std::vector<std::wstring> g_regexRules;
+static std::vector<std::wstring> g_includeExtensions;
+static std::vector<std::wstring> g_excludeExtensions;
+
+static bool g_tvpStubInitialized = false;
 
 #define FIND_EXPORTER
 #define DUMP_HASH
@@ -73,7 +95,7 @@ void UnInlineHook(T& OriginalFunction, T DetourFunction)
 
 
 class Hasher;
-typedef int (Hasher::*ComputeHashProc)(tTJSVariant*, tTJSString*, tTJSString*);
+typedef int (Hasher::* ComputeHashProc)(tTJSVariant*, tTJSString*, tTJSString*);
 
 
 ComputeHashProc pfnComputePathName = NULL;
@@ -81,6 +103,8 @@ ComputeHashProc pfnComputeFileName = NULL;
 
 
 static bool g_enableDumpHash = false;
+static Log::Logger g_loggerNameHash;
+static std::wstring g_logNameHash;
 
 
 void PrintBinary(wchar_t* _Buf, size_t _BufSize, const void* _Data, size_t _Size)
@@ -119,15 +143,16 @@ public:
 
 			if (octet)
 			{
-				wchar_t buffer[80] {};
-				
+				wchar_t buffer[80]{};
+
 				PrintBinary(buffer, _countof(buffer), octet->GetData(), octet->GetLength());
 
 				auto ret = g_pathHashSet.insert(buffer);
 
 				if (ret.second)
 				{
-					g_logger.WriteLine(L"PathHash: \"%s\" \"%s\" \"%s\"", input->c_str(), salt->c_str(), buffer);
+					// g_logger.WriteLine(L"PathHash: \"%s\" \"%s\" \"%s\"", input->c_str(), salt->c_str(), buffer);
+					g_loggerNameHash.Write(L"%s:%s\n", buffer, input->c_str());
 				}
 			}
 		}
@@ -145,7 +170,7 @@ public:
 
 			if (octet)
 			{
-				wchar_t buffer[80] {};
+				wchar_t buffer[80]{};
 
 				PrintBinary(buffer, _countof(buffer), octet->GetData(), octet->GetLength());
 
@@ -153,7 +178,8 @@ public:
 
 				if (ret.second)
 				{
-					g_logger.WriteLine(L"NameHash: \"%s\" \"%s\" \"%s\"", input->c_str(), salt->c_str(), buffer);
+					// g_logger.WriteLine(L"NameHash: \"%s\" \"%s\" \"%s\"", input->c_str(), salt->c_str(), buffer);
+					g_loggerNameHash.Write(L"%s:%s\n", buffer, input->c_str());
 				}
 			}
 		}
@@ -244,9 +270,9 @@ void HookDecIndex()
 	_asm
 	{
 		pushad
-		
-		mov eax, [esp+0x2C] // a4 0x20+0xC
-		mov edx, [esp+0x30] // a5 0x20+0x10
+
+		mov eax, [esp + 0x2C] // a4 0x20+0xC
+		mov edx, [esp + 0x30] // a5 0x20+0x10
 		push edx
 		push eax
 		call PrintIndexKey
@@ -285,7 +311,7 @@ PVOID _fastcall HookCreateFilter(PVOID a1, PVOID a2, ULONGLONG a3, BYTE a4)
 	uint8_t* cxdecOrder = (uint8_t*)((uintptr_t)a1 + 0x3020);
 
 	File::WriteAllBytes(path + L"\\CxdecTable.bin", cxdecTable, 0x1000);
-	File::WriteAllBytes(path + L"\\CxdecOrder.bin", cxdecTable, 0x11);
+	File::WriteAllBytes(path + L"\\CxdecOrder.bin", cxdecOrder, 0x11);
 
 	PVOID result = pfnCreateFilter(a1, a2, a3, a4);
 
@@ -426,6 +452,7 @@ FARPROC WINAPI HookGetProcAddress(HMODULE hModule, LPCSTR lpProcName)
 #ifdef DUMP_HASH
 					if (g_enableDumpHash)
 					{
+						g_loggerNameHash.Open(g_logNameHash.c_str());
 						HookHash(hModule);
 					}
 #endif
@@ -487,9 +514,9 @@ public:
 #ifdef MEMORYSTREAM
 
 
-// 
+//
 // Version : KRKRZ (MSVC)
-// 
+//
 #define KRKRZ_OPERATOR_NEW_SIG "\x55\x8B\xEC\xEB\x1F\xFF\x75\x08\xE8\x2A\x2A\x2A\x2A\x59\x85\xC0\x75\x12\x83\x7D\x08\xFF\x75\x07\xE8\x2A\x2A\x2A\x2A\xEB\x05\xE8\x2A\x2A\x2A\x2A\xFF\x75\x08\xE8\x2A\x2A\x2A\x2A\x59\x85\xC0\x74\xD4\x5D\xC3"
 #define KRKRZ_OPERATOR_NEW_SIG_LEN ( sizeof(KRKRZ_OPERATOR_NEW_SIG) - 1 )
 // Prototype
@@ -609,26 +636,26 @@ public:
 	{
 		switch (whence)
 		{
-			case TJS_BS_SEEK_SET:
-			{
-				if (offset >= 0 && offset <= m_size)
-					m_offset = (ptrdiff_t)offset;
-				break;
-			}
-			case TJS_BS_SEEK_CUR:
-			{
-				tjs_int64 new_offset = m_offset + offset;
-				if (new_offset >= 0 && new_offset <= m_size)
-					m_offset = (ptrdiff_t)new_offset;
-				break;
-			}
-			case TJS_BS_SEEK_END:
-			{
-				tjs_int64 new_offset = m_size + offset;
-				if (new_offset >= 0 && new_offset <= m_size)
-					m_offset = (ptrdiff_t)new_offset;
-				break;
-			}
+		case TJS_BS_SEEK_SET:
+		{
+			if (offset >= 0 && offset <= m_size)
+				m_offset = (ptrdiff_t)offset;
+			break;
+		}
+		case TJS_BS_SEEK_CUR:
+		{
+			tjs_int64 new_offset = m_offset + offset;
+			if (new_offset >= 0 && new_offset <= m_size)
+				m_offset = (ptrdiff_t)new_offset;
+			break;
+		}
+		case TJS_BS_SEEK_END:
+		{
+			tjs_int64 new_offset = m_size + offset;
+			if (new_offset >= 0 && new_offset <= m_size)
+				m_offset = (ptrdiff_t)new_offset;
+			break;
+		}
 		}
 
 		return m_offset;
@@ -706,22 +733,46 @@ void HookMemoryStreamDestructorForKrkr2(PVOID pObj)
 
 #endif
 
-
-static bool g_enableExtract;
-
-static std::wstring g_outputPath;
-
-static std::vector<std::wstring> g_regexRules;
-
-static std::vector<std::wstring> g_includeExtensions;
-static std::vector<std::wstring> g_excludeExtensions;
-
-static bool g_decryptSimpleCrypt;
-
+void FixPath(std::wstring& path)
+{
+	for (size_t i = 0; i < path.length(); i++)
+	{
+		if (path[i] == L'/')
+		{
+			path[i] = L'\\';
+		}
+	}
+}
 
 std::wstring MatchPath(const std::wstring& path)
 {
 	std::wstring newPath;
+
+	std::wregex exprx(L"file://\\./(.*?)\\.xp3>.*?", std::regex_constants::icase);
+	std::wsmatch resultx;
+
+	// g_logger.WriteLine(L"Test path %s", path.c_str());
+
+	if (std::regex_match(path, resultx, exprx))
+	{
+		// g_logger.WriteLine(L"resultx.size %d", resultx.size());
+		if (resultx.size() > 1) {
+			// newPath = result[1].str();
+			// g_logger.WriteLine(L"resultx[1] => %s", resultx[1].str());
+			g_lastxp3name = resultx[1].str();
+		}
+		else {
+			// newPath = result[0].str();
+			// g_logger.WriteLine(L"resultx[0] => %s", resultx[0].str());
+		}
+
+		FixPath(g_lastxp3name);
+
+		if (StringHelper::StartsWith(g_lastxp3name, g_xp3base))
+		{
+			g_lastxp3name = g_lastxp3name.substr(g_xp3base.length()+1);
+		}
+	}
 
 	if (path.find(L':') != std::string::npos)
 	{
@@ -790,19 +841,6 @@ std::wstring MatchPath(const std::wstring& path)
 
 	return newPath;
 }
-
-
-void FixPath(std::wstring& path)
-{
-	for (size_t i = 0; i < path.length(); i++)
-	{
-		if (path[i] == L'/')
-		{
-			path[i] = L'\\';
-		}
-	}
-}
-
 
 bool TryDecryptText(tTJSBinaryStream* stream, std::vector<uint8_t>& output)
 {
@@ -968,6 +1006,10 @@ void ExtractFile(tTJSBinaryStream* stream, std::wstring& extractPath)
 		extractPath = extractPath.substr(2);
 	}
 
+	if (!g_lastxp3name.empty()) {
+		extractPath = g_lastxp3name + L"\\" + extractPath;
+	}
+
 	std::wstring outputPath = g_outputPath + extractPath;
 
 	// Create output directory
@@ -977,6 +1019,14 @@ void ExtractFile(tTJSBinaryStream* stream, std::wstring& extractPath)
 	if (!outputDir.empty())
 	{
 		SHCreateDirectory(NULL, outputDir.c_str());
+	}
+
+	// Skip Exists
+
+	if (g_SkipExists && File::Exists(outputPath)){
+		if (g_logLevel > 0)
+			g_logger.WriteLine(L"SkipExist \"%s\"", extractPath.c_str());
+		return;
 	}
 
 	// Write to file
@@ -1061,9 +1111,9 @@ void ProcessStream(tTJSBinaryStream* stream, ttstr* name, tjs_uint32 flags)
 }
 
 
-// 
+//
 // Version : KRKRZ (MSVC)
-// 
+//
 #define TVPCREATESTREAM_SIG "\x55\x8B\xEC\x6A\xFF\x68\x2A\x2A\x2A\x2A\x64\xA1\x2A\x2A\x2A\x2A\x50\x83\xEC\x5C\x53\x56\x57\xA1\x2A\x2A\x2A\x2A\x33\xC5\x50\x8D\x45\xF4\x64\xA3\x2A\x2A\x2A\x2A\x89\x65\xF0\x89\x4D\xEC\xC7\x45\x2A\x2A\x2A\x2A\x2A\xE8\x2A\x2A\x2A\x2A\x8B\x4D\xF4\x64\x89\x0D\x2A\x2A\x2A\x2A\x59\x5F\x5E\x5B\x8B\xE5\x5D\xC3"
 #define TVPCREATESTREAM_SIG_LEN ( sizeof(TVPCREATESTREAM_SIG) - 1 )
 // Prototype
@@ -1082,6 +1132,72 @@ tKrkrzMsvcFastCallTVPCreateStreamProc pfnKrkrzMsvcFastCallTVPCreateStreamProc;
 // Hooked
 tTJSBinaryStream* _fastcall KrkrzMsvcFastCallTVPCreateStream(ttstr* name, tjs_uint32 flags)
 {
+
+	if (flags == TJS_BS_READ && g_enablePatch)
+	{
+		auto inarcname = TJSStringGetPtr(name);//name.c_str();
+
+		bool accepted = false;
+
+		if (wcsstr(inarcname, L"://") != NULL)
+		{
+			for (auto& protocol : g_patchProtocols)
+			{
+				if (_wcsnicmp(inarcname, protocol.c_str(), protocol.length()) == 0)
+				{
+					inarcname += protocol.length();
+					accepted = true;
+					break;
+				}
+			}
+		}
+		else if (g_patchNoProtocol)
+		{
+			accepted = true;
+		}
+
+		if (accepted)
+		{
+			if (wcsncmp(inarcname, L"./", 2) == 0)
+			{
+				inarcname += 2;
+			}
+			for (auto& dir : g_patchDirectory)
+			{
+				auto patchname = TVPGetAppPath() + dir.c_str() + L"/" + inarcname;
+
+				// spdlog::debug("Find {}", Encoding::Utf16ToUtf8(patchname.c_str()));
+				if (g_logLevel > 1)
+					g_logger.WriteLine(L"Find \"%s\"", patchname.c_str());
+
+				if (TVPIsExistentStorageNoSearchNoNormalize(patchname))
+				{
+					// spdlog::debug("Open {}", Encoding::Utf16ToUtf8(patchname.c_str()));
+					if (g_logLevel > 0)
+						g_logger.WriteLine(L"Open \"%s\"", patchname.c_str());
+
+					return pfnKrkrzMsvcFastCallTVPCreateStreamProc(&patchname, flags);
+				}
+			}
+
+			for (auto& arc : g_patchArchives)
+			{
+				auto patchname = TVPGetAppPath() + arc.c_str() + L">" + inarcname;
+
+				// spdlog::debug("Find {}", Encoding::Utf16ToUtf8(patchname.c_str()));
+
+				if (TVPIsExistentStorageNoSearchNoNormalize(patchname))
+				{
+					// spdlog::debug("Open {}", Encoding::Utf16ToUtf8(patchname.c_str()));
+					if (g_logLevel > 0)
+						g_logger.WriteLine(L"Open \"%s\"", patchname.c_str());
+
+					return pfnKrkrzMsvcFastCallTVPCreateStreamProc(&patchname, flags);
+				}
+			}
+		}
+	}
+
 	tTJSBinaryStream* stream = pfnKrkrzMsvcFastCallTVPCreateStreamProc(name, flags);
 	ProcessStream(stream, name, flags);
 	return stream;
@@ -1129,6 +1245,9 @@ void LoadConfiguration()
 	g_logLevel = 0;
 	g_truncateLog = false;
 	g_enableExtract = false;
+	g_SkipExists = false;
+	g_enablePatch = false;
+
 	g_outputPath.clear();
 	g_regexRules.clear();
 	g_includeExtensions.clear();
@@ -1161,6 +1280,27 @@ void LoadConfiguration()
 		if (jEnable)
 		{
 			g_enableExtract = cJSON_IsTrue(jEnable);
+		}
+
+		cJSON* jEnable2 = cJSON_GetObjectItem(jRoot, "enablePatch");
+
+		if (jEnable2)
+		{
+			g_enablePatch = cJSON_IsTrue(jEnable2);
+		}
+
+		cJSON* jpatchNoProtocol = cJSON_GetObjectItem(jRoot, "patchNoProtocol");
+
+		if (jpatchNoProtocol)
+		{
+			g_patchNoProtocol = cJSON_IsTrue(jpatchNoProtocol);
+		}
+
+		cJSON* jSkipExists = cJSON_GetObjectItem(jRoot, "SkipExists");
+
+		if (jSkipExists)
+		{
+			g_SkipExists = cJSON_IsTrue(jSkipExists);
 		}
 
 		cJSON* jOutputPath = cJSON_GetObjectItem(jRoot, "outputDirectory");
@@ -1289,6 +1429,102 @@ void LoadConfiguration()
 			}
 		}
 
+		cJSON* jProtocols = cJSON_GetObjectItem(jRoot, "patchProtocols");
+
+		if (jProtocols)
+		{
+			if (cJSON_IsArray(jProtocols))
+			{
+				int count = cJSON_GetArraySize(jProtocols);
+
+				for (int i = 0; i < count; i++)
+				{
+					cJSON* jItem = cJSON_GetArrayItem(jProtocols, i);
+
+					if (jItem)
+					{
+						char* value = cJSON_GetStringValue(jItem);
+
+						if (value)
+						{
+							std::wstring ext = Encoding::AnsiToUnicode(value, Encoding::UTF_8);
+
+							if (ext.empty())
+							{
+								continue;
+							}
+
+							g_patchProtocols.push_back(StringHelper::ToLower(ext));
+						}
+					}
+				}
+			}
+		}
+
+		cJSON* jArchives = cJSON_GetObjectItem(jRoot, "patchArchives");
+
+		if (jArchives)
+		{
+			if (cJSON_IsArray(jArchives))
+			{
+				int count = cJSON_GetArraySize(jArchives);
+
+				for (int i = 0; i < count; i++)
+				{
+					cJSON* jItem = cJSON_GetArrayItem(jArchives, i);
+
+					if (jItem)
+					{
+						char* value = cJSON_GetStringValue(jItem);
+
+						if (value)
+						{
+							std::wstring arc = Encoding::AnsiToUnicode(value, Encoding::UTF_8);
+
+							if (arc.empty())
+							{
+								continue;
+							}
+
+							g_patchArchives.push_back(StringHelper::ToLower(arc));
+						}
+					}
+				}
+			}
+		}
+
+		cJSON* jDirectory = cJSON_GetObjectItem(jRoot, "patchDirectory");
+
+		if (jDirectory)
+		{
+			if (cJSON_IsArray(jDirectory))
+			{
+				int count = cJSON_GetArraySize(jDirectory);
+
+				for (int i = 0; i < count; i++)
+				{
+					cJSON* jItem = cJSON_GetArrayItem(jDirectory, i);
+
+					if (jItem)
+					{
+						char* value = cJSON_GetStringValue(jItem);
+
+						if (value)
+						{
+							std::wstring dir = Encoding::AnsiToUnicode(value, Encoding::UTF_8);
+
+							if (dir.empty())
+							{
+								continue;
+							}
+
+							g_patchDirectory.push_back(StringHelper::ToLower(dir));
+						}
+					}
+				}
+			}
+		}
+
 		cJSON* jDecrypt = cJSON_GetObjectItem(jRoot, "decryptSimpleCrypt");
 
 		if (jDecrypt)
@@ -1303,6 +1539,26 @@ void LoadConfiguration()
 		{
 			g_enableDumpHash = cJSON_IsTrue(jDumpHash);
 		}
+		cJSON* joutputHash = cJSON_GetObjectItem(jRoot, "outputHxNameHash");
+
+		g_logNameHash = L"R:\\KrkrDump.HxNameHash_" + Util::GetTimeString(L"%Y-%m-%d_%H-%M-%S") + L".txt";
+
+		if (joutputHash)
+		{
+			char* value = cJSON_GetStringValue(joutputHash);
+
+			if (value)
+			{
+				auto logNameHash = Encoding::AnsiToUnicode(value, Encoding::UTF_8);
+
+				if (!logNameHash.empty())
+				{
+					g_logNameHash = logNameHash;
+					FixPath(g_logNameHash);
+				}
+			}
+		}
+		g_logger.WriteLine(L"g_logNameHashPath = \"%s\"", g_logNameHash.c_str());
 #endif
 
 #ifdef DUMP_HXKEY
@@ -1323,6 +1579,54 @@ void LoadConfiguration()
 	}
 }
 
+typedef HMODULE(WINAPI* t_LoadLibraryW)(LPCWSTR);
+t_LoadLibraryW o_LoadLibraryW = LoadLibraryW;
+
+HMODULE WINAPI h_LoadLibraryW(LPCWSTR lpLibFileName)
+{
+	g_logger.WriteLine(L"LoadLibrary = %s", lpLibFileName);
+
+	auto pResult = o_LoadLibraryW(lpLibFileName);
+	if (pResult != NULL) {
+
+		bool bIsFound = false;
+
+		MODULEINFO mInfo;
+		HANDLE hProcess = GetCurrentProcess();
+		GetModuleInformation(hProcess, pResult, &mInfo, sizeof(mInfo));
+
+		auto pAddr = (PBYTE)pResult;
+		for (size_t i = 0; i < mInfo.SizeOfImage - 20; i++) {
+			if (memcmp(pAddr + i, L"bootStrap", 20) == 0) {
+				g_logger.WriteLine(L"bootStrap Found");
+
+				DetourTransactionBegin();
+				DetourDetach(&o_LoadLibraryW, h_LoadLibraryW);
+				DetourTransactionCommit();
+				bIsFound = true;
+				break;
+			}
+		}
+
+		if (bIsFound) {
+			for (size_t i = 0; i < mInfo.SizeOfImage - 16; i++) {
+				if (memcmp(pAddr + i, "\x74\x04\xB0\x01\x5D\xC3\x32\xC0\x5D\xC3", 10) == 0) {
+					g_logger.WriteLine(L"bootStrap Patch1");
+
+					WriteProcessMemory(hProcess, pAddr + i, "\x74\x00", 2, NULL);
+					continue;
+				}
+				if (memcmp(pAddr + i, "\x84\xDB\x74\x19\xB8\x17\xFC\xFF\xFF\x8B\x4D\xF4", 12) == 0) {
+					g_logger.WriteLine(L"bootStrap Patch2");
+
+					WriteProcessMemory(hProcess, pAddr + i, "\xB3\x01", 2, NULL);
+					continue;
+				}
+			}
+		}
+	}
+	return pResult;
+}
 
 void InstallHooks()
 {
@@ -1331,6 +1635,12 @@ void InstallHooks()
 
 	g_logger.WriteLine(L"Image Base = %p", base);
 	g_logger.WriteLine(L"Image Base = %X", size);
+
+
+	DetourTransactionBegin();
+	DetourAttach(&o_LoadLibraryW, h_LoadLibraryW);
+	DetourTransactionCommit();
+
 
 	PVOID pfnTVPCreateStream = PE::SearchPattern(base, size, TVPCREATESTREAM_SIG, TVPCREATESTREAM_SIG_LEN);
 
@@ -1386,23 +1696,38 @@ void InstallHooks()
 #endif
 }
 
-
 void OnStartup()
 {
 	std::wstring exePath = Util::GetModulePathW(g_hEXE);
 	std::wstring dllPath = Util::GetModulePathW(g_hDLL);
 	std::wstring cfgPath = Path::ChangeExtension(dllPath, L"json");
 
-	// Build log file path
-	auto logPath = Path::GetDirectoryName(dllPath) + L"\\" + Path::GetFileNameWithoutExtension(dllPath) + L"-" + Util::GetTimeString(L"%Y-%m-%d") + L".log";
+	g_gamePath = Path::GetDirectoryName(exePath);
 
-	Util::WriteDebugMessage(L"[KrkrDump] EXE Path = \"%s\"", exePath.c_str());
-	Util::WriteDebugMessage(L"[KrkrDump] DLL Path = \"%s\"", dllPath.c_str());
-	Util::WriteDebugMessage(L"[KrkrDump] Log Path = \"%s\"", logPath.c_str());
-	Util::WriteDebugMessage(L"[KrkrDump] Cfg Path = \"%s\"", cfgPath.c_str());
+	// Build log file path
+	auto logPath = Path::GetDirectoryName(dllPath) + L"\\" + Path::GetFileNameWithoutExtension(dllPath) + L".log";
+
+	File::Delete(logPath);
+
+	g_logger.Open(logPath.c_str());
+
+	g_logger.WriteLine(L"KrkrDump Startup");
+
+	g_logger.WriteLine(L"[KrkrDump] GamePath = \"%s\"", g_gamePath.c_str());
+
+	g_logger.WriteLine(L"[KrkrDump] EXE Path = \"%s\"", exePath.c_str());
+	g_logger.WriteLine(L"[KrkrDump] DLL Path = \"%s\"", dllPath.c_str());
+	g_logger.WriteLine(L"[KrkrDump] Log Path = \"%s\"", logPath.c_str());
+	g_logger.WriteLine(L"[KrkrDump] Cfg Path = \"%s\"", cfgPath.c_str());
+
 
 	g_exePath = std::move(exePath);
 	g_dllPath = std::move(dllPath);
+
+	g_xp3base = StringHelper::ToLower(g_gamePath);
+	g_xp3base = StringHelper::removeSpecificChar(g_xp3base,L':');
+
+	g_logger.WriteLine(L"[KrkrDump] XP3 Base = \"%s\"", g_xp3base.c_str());
 
 	// Started
 
@@ -1410,23 +1735,12 @@ void OnStartup()
 	{
 		LoadConfiguration();
 
-		Util::WriteDebugMessage(L"Configuration loaded");
+		g_logger.WriteLine(L"Configuration loaded");
 	}
 	catch (const std::exception&)
 	{
-		Util::WriteDebugMessage(L"Failed to load configuration");
+		g_logger.WriteLine(L"Failed to load configuration");
 	}
-
-	if (g_truncateLog)
-	{
-		File::Delete(logPath);
-	}
-
-	g_logger.Open(logPath.c_str());
-
-	g_logger.WriteLine(L"KrkrDump Startup");
-
-	g_logger.WriteLine(L"Game Executable Path = \"%s\"", g_exePath.c_str());
 
 	try
 	{
@@ -1441,6 +1755,12 @@ void OnStartup()
 
 void OnShutdown()
 {
+#ifdef DUMP_HASH
+	if (g_enableDumpHash)
+	{
+		g_loggerNameHash.Close();
+	}
+#endif
 	g_logger.WriteLine(L"Shutdown");
 	g_logger.Close();
 }
@@ -1456,26 +1776,26 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 	switch (ul_reason_for_call)
 	{
-		case DLL_PROCESS_ATTACH:
-		{
-			g_hEXE = GetModuleHandle(NULL);
-			g_hDLL = hModule;
-			OnStartup();
-			break;
-		}
-		case DLL_THREAD_ATTACH:
-		{
-			break;
-		}
-		case DLL_THREAD_DETACH:
-		{
-			break;
-		}
-		case DLL_PROCESS_DETACH:
-		{
-			OnShutdown();
-			break;
-		}
+	case DLL_PROCESS_ATTACH:
+	{
+		g_hEXE = GetModuleHandle(NULL);
+		g_hDLL = hModule;
+		OnStartup();
+		break;
+	}
+	case DLL_THREAD_ATTACH:
+	{
+		break;
+	}
+	case DLL_THREAD_DETACH:
+	{
+		break;
+	}
+	case DLL_PROCESS_DETACH:
+	{
+		OnShutdown();
+		break;
+	}
 	}
 
 	return TRUE;
