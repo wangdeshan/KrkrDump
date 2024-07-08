@@ -31,6 +31,8 @@ static std::wstring g_dllPath;
 
 static Log::Logger g_logger;
 
+static std::wstring g_lastxp3name;
+
 static int g_logLevel;
 static bool g_truncateLog;
 static bool g_tvpStubInitialized = false;
@@ -723,6 +725,24 @@ std::wstring MatchPath(const std::wstring& path)
 {
 	std::wstring newPath;
 
+	std::wregex exprx(L"file://\\./(.*?)\\.xp3>.*?", std::regex_constants::icase);
+	std::wsmatch resultx;
+
+	// g_logger.WriteLine(L"Test path %s", path.c_str());
+
+	if (std::regex_match(path, resultx, exprx))
+	{
+		// g_logger.WriteLine(L"resultx.size %d", resultx.size());
+		if (resultx.size() > 1){
+			// newPath = result[1].str();
+			// g_logger.WriteLine(L"resultx[1] => %s", resultx[1].str());
+			g_lastxp3name = resultx[1].str();
+		} else {
+			// newPath = result[0].str();
+			// g_logger.WriteLine(L"resultx[0] => %s", resultx[0].str());
+		}
+	}
+
 	if (path.find(L':') != std::string::npos)
 	{
 		for (auto& rule : g_regexRules)
@@ -1039,6 +1059,10 @@ void ProcessStream(tTJSBinaryStream* stream, ttstr* name, tjs_uint32 flags)
 
 			if (!extractPath.empty())
 			{
+				if (!g_lastxp3name.empty()){
+					extractPath = g_lastxp3name + L"\\" + extractPath;
+				}
+				
 				if (g_logLevel > 1)
 					g_logger.WriteLine(L"Included \"%s\"", psz);
 
@@ -1394,12 +1418,20 @@ void OnStartup()
 	std::wstring cfgPath = Path::ChangeExtension(dllPath, L"json");
 
 	// Build log file path
-	auto logPath = Path::GetDirectoryName(dllPath) + L"\\" + Path::GetFileNameWithoutExtension(dllPath) + L"-" + Util::GetTimeString(L"%Y-%m-%d") + L".log";
+	auto logPath = Path::GetDirectoryName(dllPath) + L"\\" + Path::GetFileNameWithoutExtension(dllPath) + L".log";
 
-	Util::WriteDebugMessage(L"[KrkrDump] EXE Path = \"%s\"", exePath.c_str());
-	Util::WriteDebugMessage(L"[KrkrDump] DLL Path = \"%s\"", dllPath.c_str());
-	Util::WriteDebugMessage(L"[KrkrDump] Log Path = \"%s\"", logPath.c_str());
-	Util::WriteDebugMessage(L"[KrkrDump] Cfg Path = \"%s\"", cfgPath.c_str());
+	File::Delete(logPath);
+	
+	g_logger.Open(logPath.c_str());
+
+	g_logger.WriteLine(L"KrkrDump Startup");
+
+	g_logger.WriteLine(L"Game Executable Path = \"%s\"", g_exePath.c_str());
+
+	g_logger.WriteLine(L"[KrkrDump] EXE Path = \"%s\"", exePath.c_str());
+	g_logger.WriteLine(L"[KrkrDump] DLL Path = \"%s\"", dllPath.c_str());
+	g_logger.WriteLine(L"[KrkrDump] Log Path = \"%s\"", logPath.c_str());
+	g_logger.WriteLine(L"[KrkrDump] Cfg Path = \"%s\"", cfgPath.c_str());
 
 	g_exePath = std::move(exePath);
 	g_dllPath = std::move(dllPath);
@@ -1410,23 +1442,12 @@ void OnStartup()
 	{
 		LoadConfiguration();
 
-		Util::WriteDebugMessage(L"Configuration loaded");
+		g_logger.WriteLine(L"Configuration loaded");
 	}
 	catch (const std::exception&)
 	{
-		Util::WriteDebugMessage(L"Failed to load configuration");
+		g_logger.WriteLine(L"Failed to load configuration");
 	}
-
-	if (g_truncateLog)
-	{
-		File::Delete(logPath);
-	}
-
-	g_logger.Open(logPath.c_str());
-
-	g_logger.WriteLine(L"KrkrDump Startup");
-
-	g_logger.WriteLine(L"Game Executable Path = \"%s\"", g_exePath.c_str());
 
 	try
 	{
