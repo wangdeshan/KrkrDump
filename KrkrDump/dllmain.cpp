@@ -14,6 +14,8 @@
 #include <vector>
 #include <unordered_set>
 #include <shlobj.h>
+#include <Psapi.h>
+
 
 #pragma warning ( push )
 #pragma warning ( disable : 4100 4201 4457 )
@@ -75,7 +77,7 @@ void UnInlineHook(T& OriginalFunction, T DetourFunction)
 
 
 class Hasher;
-typedef int (Hasher::*ComputeHashProc)(tTJSVariant*, tTJSString*, tTJSString*);
+typedef int (Hasher::* ComputeHashProc)(tTJSVariant*, tTJSString*, tTJSString*);
 
 
 ComputeHashProc pfnComputePathName = NULL;
@@ -121,8 +123,8 @@ public:
 
 			if (octet)
 			{
-				wchar_t buffer[80] {};
-				
+				wchar_t buffer[80]{};
+
 				PrintBinary(buffer, _countof(buffer), octet->GetData(), octet->GetLength());
 
 				auto ret = g_pathHashSet.insert(buffer);
@@ -147,7 +149,7 @@ public:
 
 			if (octet)
 			{
-				wchar_t buffer[80] {};
+				wchar_t buffer[80]{};
 
 				PrintBinary(buffer, _countof(buffer), octet->GetData(), octet->GetLength());
 
@@ -246,9 +248,9 @@ void HookDecIndex()
 	_asm
 	{
 		pushad
-		
-		mov eax, [esp+0x2C] // a4 0x20+0xC
-		mov edx, [esp+0x30] // a5 0x20+0x10
+
+		mov eax, [esp + 0x2C] // a4 0x20+0xC
+		mov edx, [esp + 0x30] // a5 0x20+0x10
 		push edx
 		push eax
 		call PrintIndexKey
@@ -611,26 +613,26 @@ public:
 	{
 		switch (whence)
 		{
-			case TJS_BS_SEEK_SET:
-			{
-				if (offset >= 0 && offset <= m_size)
-					m_offset = (ptrdiff_t)offset;
-				break;
-			}
-			case TJS_BS_SEEK_CUR:
-			{
-				tjs_int64 new_offset = m_offset + offset;
-				if (new_offset >= 0 && new_offset <= m_size)
-					m_offset = (ptrdiff_t)new_offset;
-				break;
-			}
-			case TJS_BS_SEEK_END:
-			{
-				tjs_int64 new_offset = m_size + offset;
-				if (new_offset >= 0 && new_offset <= m_size)
-					m_offset = (ptrdiff_t)new_offset;
-				break;
-			}
+		case TJS_BS_SEEK_SET:
+		{
+			if (offset >= 0 && offset <= m_size)
+				m_offset = (ptrdiff_t)offset;
+			break;
+		}
+		case TJS_BS_SEEK_CUR:
+		{
+			tjs_int64 new_offset = m_offset + offset;
+			if (new_offset >= 0 && new_offset <= m_size)
+				m_offset = (ptrdiff_t)new_offset;
+			break;
+		}
+		case TJS_BS_SEEK_END:
+		{
+			tjs_int64 new_offset = m_size + offset;
+			if (new_offset >= 0 && new_offset <= m_size)
+				m_offset = (ptrdiff_t)new_offset;
+			break;
+		}
 		}
 
 		return m_offset;
@@ -733,11 +735,12 @@ std::wstring MatchPath(const std::wstring& path)
 	if (std::regex_match(path, resultx, exprx))
 	{
 		// g_logger.WriteLine(L"resultx.size %d", resultx.size());
-		if (resultx.size() > 1){
+		if (resultx.size() > 1) {
 			// newPath = result[1].str();
 			// g_logger.WriteLine(L"resultx[1] => %s", resultx[1].str());
 			g_lastxp3name = resultx[1].str();
-		} else {
+		}
+		else {
 			// newPath = result[0].str();
 			// g_logger.WriteLine(L"resultx[0] => %s", resultx[0].str());
 		}
@@ -1059,10 +1062,10 @@ void ProcessStream(tTJSBinaryStream* stream, ttstr* name, tjs_uint32 flags)
 
 			if (!extractPath.empty())
 			{
-				if (!g_lastxp3name.empty()){
+				if (!g_lastxp3name.empty()) {
 					extractPath = g_lastxp3name + L"\\" + extractPath;
 				}
-				
+
 				if (g_logLevel > 1)
 					g_logger.WriteLine(L"Included \"%s\"", psz);
 
@@ -1347,6 +1350,54 @@ void LoadConfiguration()
 	}
 }
 
+typedef HMODULE(WINAPI* t_LoadLibraryW)(LPCWSTR);
+t_LoadLibraryW o_LoadLibraryW = LoadLibraryW;
+
+HMODULE WINAPI h_LoadLibraryW(LPCWSTR lpLibFileName)
+{
+	g_logger.WriteLine(L"LoadLibrary = %s", lpLibFileName);
+
+	auto pResult = o_LoadLibraryW(lpLibFileName);
+	if (pResult != NULL) {
+
+		bool bIsFound = false;
+
+		MODULEINFO mInfo;
+		HANDLE hProcess = GetCurrentProcess();
+		GetModuleInformation(hProcess, pResult, &mInfo, sizeof(mInfo));
+
+		auto pAddr = (PBYTE)pResult;
+		for (size_t i = 0; i < mInfo.SizeOfImage - 20; i++) {
+			if (memcmp(pAddr + i, L"bootStrap", 20) == 0) {
+				g_logger.WriteLine(L"bootStrap Found");
+
+				DetourTransactionBegin();
+				DetourDetach(&o_LoadLibraryW, h_LoadLibraryW);
+				DetourTransactionCommit();
+				bIsFound = true;
+				break;
+			}
+		}
+
+		if (bIsFound) {
+			for (size_t i = 0; i < mInfo.SizeOfImage - 16; i++) {
+				if (memcmp(pAddr + i, "\x74\x04\xB0\x01\x5D\xC3\x32\xC0\x5D\xC3", 10) == 0) {
+					g_logger.WriteLine(L"bootStrap Patch1");
+
+					WriteProcessMemory(hProcess, pAddr + i, "\x74\x00", 2, NULL);
+					continue;
+				}
+				if (memcmp(pAddr + i, "\x84\xDB\x74\x19\xB8\x17\xFC\xFF\xFF\x8B\x4D\xF4", 12) == 0) {
+					g_logger.WriteLine(L"bootStrap Patch2");
+
+					WriteProcessMemory(hProcess, pAddr + i, "\xB3\x01", 2, NULL);
+					continue;
+				}
+			}
+		}
+	}
+	return pResult;
+}
 
 void InstallHooks()
 {
@@ -1355,6 +1406,12 @@ void InstallHooks()
 
 	g_logger.WriteLine(L"Image Base = %p", base);
 	g_logger.WriteLine(L"Image Base = %X", size);
+
+
+	DetourTransactionBegin();
+	DetourAttach(&o_LoadLibraryW, h_LoadLibraryW);
+	DetourTransactionCommit();
+
 
 	PVOID pfnTVPCreateStream = PE::SearchPattern(base, size, TVPCREATESTREAM_SIG, TVPCREATESTREAM_SIG_LEN);
 
@@ -1421,7 +1478,7 @@ void OnStartup()
 	auto logPath = Path::GetDirectoryName(dllPath) + L"\\" + Path::GetFileNameWithoutExtension(dllPath) + L".log";
 
 	File::Delete(logPath);
-	
+
 	g_logger.Open(logPath.c_str());
 
 	g_logger.WriteLine(L"KrkrDump Startup");
@@ -1477,26 +1534,26 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 	switch (ul_reason_for_call)
 	{
-		case DLL_PROCESS_ATTACH:
-		{
-			g_hEXE = GetModuleHandle(NULL);
-			g_hDLL = hModule;
-			OnStartup();
-			break;
-		}
-		case DLL_THREAD_ATTACH:
-		{
-			break;
-		}
-		case DLL_THREAD_DETACH:
-		{
-			break;
-		}
-		case DLL_PROCESS_DETACH:
-		{
-			OnShutdown();
-			break;
-		}
+	case DLL_PROCESS_ATTACH:
+	{
+		g_hEXE = GetModuleHandle(NULL);
+		g_hDLL = hModule;
+		OnStartup();
+		break;
+	}
+	case DLL_THREAD_ATTACH:
+	{
+		break;
+	}
+	case DLL_THREAD_DETACH:
+	{
+		break;
+	}
+	case DLL_PROCESS_DETACH:
+	{
+		OnShutdown();
+		break;
+	}
 	}
 
 	return TRUE;
