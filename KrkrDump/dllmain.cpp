@@ -30,6 +30,7 @@ static HMODULE g_hDLL;
 
 static std::wstring g_exePath;
 static std::wstring g_dllPath;
+static std::wstring g_gamePath;
 
 static Log::Logger g_logger;
 
@@ -39,6 +40,10 @@ static int g_logLevel;
 static bool g_truncateLog;
 static bool g_tvpStubInitialized = false;
 
+static std::list<std::wstring> g_patchProtocols;
+static std::list<std::wstring> g_patchArchives;
+static bool g_patchNoProtocol;
+static bool g_enablePatch;
 
 #define FIND_EXPORTER
 #define DUMP_HASH
@@ -1109,6 +1114,53 @@ tKrkrzMsvcFastCallTVPCreateStreamProc pfnKrkrzMsvcFastCallTVPCreateStreamProc;
 // Hooked
 tTJSBinaryStream* _fastcall KrkrzMsvcFastCallTVPCreateStream(ttstr* name, tjs_uint32 flags)
 {
+	
+	if (flags == TJS_BS_READ && g_enablePatch)
+	{
+		auto inarcname = TJSStringGetPtr(name);//name.c_str();
+
+		bool accepted = false;
+
+		if (wcsstr(inarcname, L"://") != NULL)
+		{
+			for (auto& protocol : g_patchProtocols)
+			{
+				if (_wcsnicmp(inarcname, protocol.c_str(), protocol.length()) == 0)
+				{
+					inarcname += protocol.length();
+					accepted = true;
+					break;
+				}
+			}
+		}
+		else if (g_patchNoProtocol)
+		{
+			accepted = true;
+		}
+
+		if (accepted)
+		{
+			if (wcsncmp(inarcname, L"./", 2) == 0)
+			{
+				inarcname += 2;
+			}
+
+			for (auto& arc : g_patchArchives)
+			{
+				auto patchname = TVPGetAppPath() + arc.c_str() + L">" + inarcname;
+
+				// spdlog::debug("Find {}", Encoding::Utf16ToUtf8(patchname.c_str()));
+
+				if (TVPIsExistentStorageNoSearchNoNormalize(patchname))
+				{
+					// spdlog::debug("Open {}", Encoding::Utf16ToUtf8(patchname.c_str()));
+
+					return pfnKrkrzMsvcFastCallTVPCreateStreamProc(&patchname, flags);
+				}
+			}
+		}
+	}
+	
 	tTJSBinaryStream* stream = pfnKrkrzMsvcFastCallTVPCreateStreamProc(name, flags);
 	ProcessStream(stream, name, flags);
 	return stream;
@@ -1189,7 +1241,21 @@ void LoadConfiguration()
 		{
 			g_enableExtract = cJSON_IsTrue(jEnable);
 		}
+		
+		cJSON* jEnable2 = cJSON_GetObjectItem(jRoot, "enablePatch");
 
+		if (jEnable2)
+		{
+			g_enablePatch = cJSON_IsTrue(jEnable2);
+		}		
+		
+		cJSON* jpatchNoProtocol = cJSON_GetObjectItem(jRoot, "patchNoProtocol");
+
+		if (jpatchNoProtocol)
+		{
+			g_patchNoProtocol = cJSON_IsTrue(jpatchNoProtocol);
+		}
+		
 		cJSON* jOutputPath = cJSON_GetObjectItem(jRoot, "outputDirectory");
 
 		if (jOutputPath)
@@ -1315,7 +1381,71 @@ void LoadConfiguration()
 				}
 			}
 		}
+		
+		cJSON* jProtocols = cJSON_GetObjectItem(jRoot, "patchProtocols");
 
+		if (jProtocols)
+		{
+			if (cJSON_IsArray(jProtocols))
+			{
+				int count = cJSON_GetArraySize(jProtocols);
+
+				for (int i = 0; i < count; i++)
+				{
+					cJSON* jItem = cJSON_GetArrayItem(jProtocols, i);
+
+					if (jItem)
+					{
+						char* value = cJSON_GetStringValue(jItem);
+
+						if (value)
+						{
+							std::wstring ext = Encoding::AnsiToUnicode(value, Encoding::UTF_8);
+
+							if (ext.empty())
+							{
+								continue;
+							}
+
+							g_patchProtocols.push_back(StringHelper::ToLower(ext));
+						}
+					}
+				}
+			}
+		}
+
+		cJSON* jArchives = cJSON_GetObjectItem(jRoot, "patchArchives");
+
+		if (jArchives)
+		{
+			if (cJSON_IsArray(jArchives))
+			{
+				int count = cJSON_GetArraySize(jArchives);
+
+				for (int i = 0; i < count; i++)
+				{
+					cJSON* jItem = cJSON_GetArrayItem(jArchives, i);
+
+					if (jItem)
+					{
+						char* value = cJSON_GetStringValue(jItem);
+
+						if (value)
+						{
+							std::wstring arc = Encoding::AnsiToUnicode(value, Encoding::UTF_8);
+
+							if (arc.empty())
+							{
+								continue;
+							}
+
+							g_patchArchives.push_back(StringHelper::ToLower(arc));
+						}
+					}
+				}
+			}
+		}
+		
 		cJSON* jDecrypt = cJSON_GetObjectItem(jRoot, "decryptSimpleCrypt");
 
 		if (jDecrypt)
@@ -1474,6 +1604,9 @@ void OnStartup()
 	std::wstring dllPath = Util::GetModulePathW(g_hDLL);
 	std::wstring cfgPath = Path::ChangeExtension(dllPath, L"json");
 
+
+	g_gamePath = Path::GetDirectoryName(exePath);
+
 	// Build log file path
 	auto logPath = Path::GetDirectoryName(dllPath) + L"\\" + Path::GetFileNameWithoutExtension(dllPath) + L".log";
 
@@ -1483,12 +1616,13 @@ void OnStartup()
 
 	g_logger.WriteLine(L"KrkrDump Startup");
 
-	g_logger.WriteLine(L"Game Executable Path = \"%s\"", g_exePath.c_str());
+	g_logger.WriteLine(L"[KrkrDump] GamePath = \"%s\"", g_gamePath.c_str());
 
 	g_logger.WriteLine(L"[KrkrDump] EXE Path = \"%s\"", exePath.c_str());
 	g_logger.WriteLine(L"[KrkrDump] DLL Path = \"%s\"", dllPath.c_str());
 	g_logger.WriteLine(L"[KrkrDump] Log Path = \"%s\"", logPath.c_str());
 	g_logger.WriteLine(L"[KrkrDump] Cfg Path = \"%s\"", cfgPath.c_str());
+
 
 	g_exePath = std::move(exePath);
 	g_dllPath = std::move(dllPath);
