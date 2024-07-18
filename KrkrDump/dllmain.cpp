@@ -38,12 +38,23 @@ static std::wstring g_lastxp3name;
 
 static int g_logLevel;
 static bool g_truncateLog;
-static bool g_tvpStubInitialized = false;
+static bool g_decryptSimpleCrypt;
+
+static bool g_patchNoProtocol;
+static bool g_enablePatch;
+static bool g_enableExtract;
+
+static std::wstring g_outputPath;
 
 static std::list<std::wstring> g_patchProtocols;
 static std::list<std::wstring> g_patchArchives;
-static bool g_patchNoProtocol;
-static bool g_enablePatch;
+static std::list<std::wstring> g_patchDirectory;
+
+static std::vector<std::wstring> g_regexRules;
+static std::vector<std::wstring> g_includeExtensions;
+static std::vector<std::wstring> g_excludeExtensions;
+
+static bool g_tvpStubInitialized = false;
 
 #define FIND_EXPORTER
 #define DUMP_HASH
@@ -496,9 +507,9 @@ public:
 #ifdef MEMORYSTREAM
 
 
-// 
+//
 // Version : KRKRZ (MSVC)
-// 
+//
 #define KRKRZ_OPERATOR_NEW_SIG "\x55\x8B\xEC\xEB\x1F\xFF\x75\x08\xE8\x2A\x2A\x2A\x2A\x59\x85\xC0\x75\x12\x83\x7D\x08\xFF\x75\x07\xE8\x2A\x2A\x2A\x2A\xEB\x05\xE8\x2A\x2A\x2A\x2A\xFF\x75\x08\xE8\x2A\x2A\x2A\x2A\x59\x85\xC0\x74\xD4\x5D\xC3"
 #define KRKRZ_OPERATOR_NEW_SIG_LEN ( sizeof(KRKRZ_OPERATOR_NEW_SIG) - 1 )
 // Prototype
@@ -714,18 +725,6 @@ void HookMemoryStreamDestructorForKrkr2(PVOID pObj)
 
 
 #endif
-
-
-static bool g_enableExtract;
-
-static std::wstring g_outputPath;
-
-static std::vector<std::wstring> g_regexRules;
-
-static std::vector<std::wstring> g_includeExtensions;
-static std::vector<std::wstring> g_excludeExtensions;
-
-static bool g_decryptSimpleCrypt;
 
 
 std::wstring MatchPath(const std::wstring& path)
@@ -1093,9 +1092,9 @@ void ProcessStream(tTJSBinaryStream* stream, ttstr* name, tjs_uint32 flags)
 }
 
 
-// 
+//
 // Version : KRKRZ (MSVC)
-// 
+//
 #define TVPCREATESTREAM_SIG "\x55\x8B\xEC\x6A\xFF\x68\x2A\x2A\x2A\x2A\x64\xA1\x2A\x2A\x2A\x2A\x50\x83\xEC\x5C\x53\x56\x57\xA1\x2A\x2A\x2A\x2A\x33\xC5\x50\x8D\x45\xF4\x64\xA3\x2A\x2A\x2A\x2A\x89\x65\xF0\x89\x4D\xEC\xC7\x45\x2A\x2A\x2A\x2A\x2A\xE8\x2A\x2A\x2A\x2A\x8B\x4D\xF4\x64\x89\x0D\x2A\x2A\x2A\x2A\x59\x5F\x5E\x5B\x8B\xE5\x5D\xC3"
 #define TVPCREATESTREAM_SIG_LEN ( sizeof(TVPCREATESTREAM_SIG) - 1 )
 // Prototype
@@ -1114,7 +1113,7 @@ tKrkrzMsvcFastCallTVPCreateStreamProc pfnKrkrzMsvcFastCallTVPCreateStreamProc;
 // Hooked
 tTJSBinaryStream* _fastcall KrkrzMsvcFastCallTVPCreateStream(ttstr* name, tjs_uint32 flags)
 {
-	
+
 	if (flags == TJS_BS_READ && g_enablePatch)
 	{
 		auto inarcname = TJSStringGetPtr(name);//name.c_str();
@@ -1144,6 +1143,23 @@ tTJSBinaryStream* _fastcall KrkrzMsvcFastCallTVPCreateStream(ttstr* name, tjs_ui
 			{
 				inarcname += 2;
 			}
+			for (auto& dir : g_patchDirectory)
+			{
+				auto patchname = TVPGetAppPath() + dir.c_str() + L"/" + inarcname;
+
+				// spdlog::debug("Find {}", Encoding::Utf16ToUtf8(patchname.c_str()));
+				if (g_logLevel > 1)
+					g_logger.WriteLine(L"Find \"%s\"", patchname.c_str());
+
+				if (TVPIsExistentStorageNoSearchNoNormalize(patchname))
+				{
+					// spdlog::debug("Open {}", Encoding::Utf16ToUtf8(patchname.c_str()));
+					if (g_logLevel > 0)
+						g_logger.WriteLine(L"Open \"%s\"", patchname.c_str());
+
+					return pfnKrkrzMsvcFastCallTVPCreateStreamProc(&patchname, flags);
+				}
+			}
 
 			for (auto& arc : g_patchArchives)
 			{
@@ -1154,13 +1170,15 @@ tTJSBinaryStream* _fastcall KrkrzMsvcFastCallTVPCreateStream(ttstr* name, tjs_ui
 				if (TVPIsExistentStorageNoSearchNoNormalize(patchname))
 				{
 					// spdlog::debug("Open {}", Encoding::Utf16ToUtf8(patchname.c_str()));
+					if (g_logLevel > 0)
+						g_logger.WriteLine(L"Open \"%s\"", patchname.c_str());
 
 					return pfnKrkrzMsvcFastCallTVPCreateStreamProc(&patchname, flags);
 				}
 			}
 		}
 	}
-	
+
 	tTJSBinaryStream* stream = pfnKrkrzMsvcFastCallTVPCreateStreamProc(name, flags);
 	ProcessStream(stream, name, flags);
 	return stream;
@@ -1241,21 +1259,21 @@ void LoadConfiguration()
 		{
 			g_enableExtract = cJSON_IsTrue(jEnable);
 		}
-		
+
 		cJSON* jEnable2 = cJSON_GetObjectItem(jRoot, "enablePatch");
 
 		if (jEnable2)
 		{
 			g_enablePatch = cJSON_IsTrue(jEnable2);
-		}		
-		
+		}
+
 		cJSON* jpatchNoProtocol = cJSON_GetObjectItem(jRoot, "patchNoProtocol");
 
 		if (jpatchNoProtocol)
 		{
 			g_patchNoProtocol = cJSON_IsTrue(jpatchNoProtocol);
 		}
-		
+
 		cJSON* jOutputPath = cJSON_GetObjectItem(jRoot, "outputDirectory");
 
 		if (jOutputPath)
@@ -1381,7 +1399,7 @@ void LoadConfiguration()
 				}
 			}
 		}
-		
+
 		cJSON* jProtocols = cJSON_GetObjectItem(jRoot, "patchProtocols");
 
 		if (jProtocols)
@@ -1445,7 +1463,39 @@ void LoadConfiguration()
 				}
 			}
 		}
-		
+
+		cJSON* jDirectory = cJSON_GetObjectItem(jRoot, "patchDirectory");
+
+		if (jDirectory)
+		{
+			if (cJSON_IsArray(jDirectory))
+			{
+				int count = cJSON_GetArraySize(jDirectory);
+
+				for (int i = 0; i < count; i++)
+				{
+					cJSON* jItem = cJSON_GetArrayItem(jDirectory, i);
+
+					if (jItem)
+					{
+						char* value = cJSON_GetStringValue(jItem);
+
+						if (value)
+						{
+							std::wstring dir = Encoding::AnsiToUnicode(value, Encoding::UTF_8);
+
+							if (dir.empty())
+							{
+								continue;
+							}
+
+							g_patchDirectory.push_back(StringHelper::ToLower(dir));
+						}
+					}
+				}
+			}
+		}
+
 		cJSON* jDecrypt = cJSON_GetObjectItem(jRoot, "decryptSimpleCrypt");
 
 		if (jDecrypt)
@@ -1603,7 +1653,6 @@ void OnStartup()
 	std::wstring exePath = Util::GetModulePathW(g_hEXE);
 	std::wstring dllPath = Util::GetModulePathW(g_hDLL);
 	std::wstring cfgPath = Path::ChangeExtension(dllPath, L"json");
-
 
 	g_gamePath = Path::GetDirectoryName(exePath);
 
