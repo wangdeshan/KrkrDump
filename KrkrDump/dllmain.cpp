@@ -43,6 +43,7 @@ static bool g_decryptSimpleCrypt;
 static bool g_patchNoProtocol;
 static bool g_enablePatch;
 static bool g_enableExtract;
+static bool g_SkipExists;
 
 static std::wstring g_outputPath;
 
@@ -1006,6 +1007,14 @@ void ExtractFile(tTJSBinaryStream* stream, std::wstring& extractPath)
 		SHCreateDirectory(NULL, outputDir.c_str());
 	}
 
+	// Skip Exists
+
+	if (g_SkipExists && File::Exists(outputPath)){
+		if (g_logLevel > 0)
+			g_logger.WriteLine(L"SkipExist \"%s\"", extractPath.c_str());
+		return;
+	}
+
 	// Write to file
 
 	size_t size = (size_t)TJSBinaryStream_GetLength(stream);
@@ -1226,6 +1235,9 @@ void LoadConfiguration()
 	g_logLevel = 0;
 	g_truncateLog = false;
 	g_enableExtract = false;
+	g_SkipExists = false;
+	g_enablePatch = false;
+
 	g_outputPath.clear();
 	g_regexRules.clear();
 	g_includeExtensions.clear();
@@ -1272,6 +1284,13 @@ void LoadConfiguration()
 		if (jpatchNoProtocol)
 		{
 			g_patchNoProtocol = cJSON_IsTrue(jpatchNoProtocol);
+		}
+
+		cJSON* jSkipExists = cJSON_GetObjectItem(jRoot, "SkipExists");
+
+		if (jSkipExists)
+		{
+			g_SkipExists = cJSON_IsTrue(jSkipExists);
 		}
 
 		cJSON* jOutputPath = cJSON_GetObjectItem(jRoot, "outputDirectory");

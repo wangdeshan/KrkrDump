@@ -270,6 +270,16 @@ namespace File
 		return false;
 	}
 
+	bool Exists(const std::string& filename) {
+		std::ifstream file(filename);
+		return file.good();
+	}
+
+	bool Exists(const std::wstring& filename) {
+		std::wifstream file(filename);
+		return file.good();
+	}
+
 	void Delete(const std::string& path)
 	{
 		remove(path.c_str());
