@@ -31,6 +31,7 @@ static HMODULE g_hDLL;
 static std::wstring g_exePath;
 static std::wstring g_dllPath;
 static std::wstring g_gamePath;
+static std::wstring g_xp3base;
 
 static Log::Logger g_logger;
 
@@ -749,6 +750,10 @@ std::wstring MatchPath(const std::wstring& path)
 			// newPath = result[0].str();
 			// g_logger.WriteLine(L"resultx[0] => %s", resultx[0].str());
 		}
+		if (StringHelper::StartsWith(g_lastxp3name, g_xp3base))
+		{
+			g_lastxp3name = g_lastxp3name.substr(g_xp3base.length()+1);
+		}
 	}
 
 	if (path.find(L':') != std::string::npos)
@@ -996,6 +1001,10 @@ void ExtractFile(tTJSBinaryStream* stream, std::wstring& extractPath)
 		extractPath = extractPath.substr(2);
 	}
 
+	if (!g_lastxp3name.empty()) {
+		extractPath = g_lastxp3name + L"\\" + extractPath;
+	}
+
 	std::wstring outputPath = g_outputPath + extractPath;
 
 	// Create output directory
@@ -1075,10 +1084,6 @@ void ProcessStream(tTJSBinaryStream* stream, ttstr* name, tjs_uint32 flags)
 
 			if (!extractPath.empty())
 			{
-				if (!g_lastxp3name.empty()) {
-					extractPath = g_lastxp3name + L"\\" + extractPath;
-				}
-
 				if (g_logLevel > 1)
 					g_logger.WriteLine(L"Included \"%s\"", psz);
 
@@ -1666,7 +1671,6 @@ void InstallHooks()
 #endif
 }
 
-
 void OnStartup()
 {
 	std::wstring exePath = Util::GetModulePathW(g_hEXE);
@@ -1694,6 +1698,11 @@ void OnStartup()
 
 	g_exePath = std::move(exePath);
 	g_dllPath = std::move(dllPath);
+
+	g_xp3base = StringHelper::ToLower(g_gamePath);
+	g_xp3base = StringHelper::removeSpecificChar(g_xp3base,L':');
+
+	g_logger.WriteLine(L"[KrkrDump] XP3 Base = \"%s\"", g_xp3base.c_str());
 
 	// Started
 
