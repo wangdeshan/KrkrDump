@@ -728,6 +728,16 @@ void HookMemoryStreamDestructorForKrkr2(PVOID pObj)
 
 #endif
 
+void FixPath(std::wstring& path)
+{
+	for (size_t i = 0; i < path.length(); i++)
+	{
+		if (path[i] == L'/')
+		{
+			path[i] = L'\\';
+		}
+	}
+}
 
 std::wstring MatchPath(const std::wstring& path)
 {
@@ -750,6 +760,9 @@ std::wstring MatchPath(const std::wstring& path)
 			// newPath = result[0].str();
 			// g_logger.WriteLine(L"resultx[0] => %s", resultx[0].str());
 		}
+
+		FixPath(g_lastxp3name);
+
 		if (StringHelper::StartsWith(g_lastxp3name, g_xp3base))
 		{
 			g_lastxp3name = g_lastxp3name.substr(g_xp3base.length()+1);
@@ -823,19 +836,6 @@ std::wstring MatchPath(const std::wstring& path)
 
 	return newPath;
 }
-
-
-void FixPath(std::wstring& path)
-{
-	for (size_t i = 0; i < path.length(); i++)
-	{
-		if (path[i] == L'/')
-		{
-			path[i] = L'\\';
-		}
-	}
-}
-
 
 bool TryDecryptText(tTJSBinaryStream* stream, std::vector<uint8_t>& output)
 {
