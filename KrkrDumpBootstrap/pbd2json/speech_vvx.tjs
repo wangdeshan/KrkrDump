@@ -1,0 +1,3 @@
+Storages.addAutoPath(System.exePath + "krkrpatch/");
+Plugins.link("httprequest.dll");
+Scripts.execStorage("speech_vvx.real.tjs");

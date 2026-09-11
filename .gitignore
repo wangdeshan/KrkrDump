@@ -361,3 +361,12 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+
+
+KrkrDumpBootstrap/SchemeTool/SchemeTool.*.cs
+KrkrDumpBootstrap/SchemeTool/Roslyn
+KrkrDumpBootstrap/BackUp
+KrkrDumpBootstrap/bin
+KrkrDumpBootstrap/infos/*
+

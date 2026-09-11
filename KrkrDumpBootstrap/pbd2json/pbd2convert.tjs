@@ -1,0 +1,36 @@
+Plugins.link("PackinOne.dll");
+Plugins.link("json.dll");
+Plugins.link("systemEx.dll");
+
+// var pathIn = System.urldecode(System.getArgument("-in"));
+// var pathOut = System.urldecode(System.getArgument("-out"));
+
+// pbd2json(pathIn, pathOut);
+// pbd("hi_a_1.pbd");
+// pbd("title.pbd");
+// var o = Scripts.evalStorage("hi_a_1.pbd.json.struct");
+// o.saveStruct("test.struct");
+
+function convertpbd(pathIn) {
+    Debug.message(pathIn);
+    var obj;
+    try {
+        obj = Scripts.loadDataPack(pathIn);
+    } catch (er) {
+        Debug.message(er);
+        return;
+    }
+    try {
+        if ((typeof obj.saveStruct) == "undefined") {
+            var obj2 = [];
+            obj2[0] = obj;
+            obj2.saveStruct(pathIn + ".struct2");
+            return;
+        }
+        obj.saveStruct(pathIn + ".struct");
+        Scripts.saveJSON(pathIn + ".json", obj, true);
+        return;
+    } catch (e) {
+        Debug.message(e.message);
+    }
+}
