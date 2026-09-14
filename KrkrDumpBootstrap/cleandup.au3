@@ -13,11 +13,11 @@ Global $scanedlist = FileOpen("R:\krdlist.txt", 2 + 128)
 FileMove("R:\duplic.txt", "R:\duplic.old.txt", 1 + 8)
 Global $duplist = FileOpen("R:\duplic.txt", 2 + 128)
 
-Switch 0
+Switch 3
 	Case 0
-		ScanDir("D:\user\Downloads\aria2-download\dav\Download\妙啊")
+		ScanDir("D:\user\Downloads\aria2-download\dav\妙啊")
 		ScanDir("D:\Desktop\twi\gallery-dl")
-		ScanDir("G:\Download\user", "G:\Download\user_dup")
+		ScanDir("G:\Download\user", "G:\dup\user")
 		ScanDir("D:\user\Downloads\aria2-download\dav\Download\user", "D:\dup\biliuser")
 		ScanDir("D:\user\Pictures", "D:\dup\Pictures")
 	Case 1
@@ -27,6 +27,10 @@ Switch 0
 ;~ 		ScanDir("I:\DC\DC5\KrkrDump", "r:\KrkrDump_dup")
 ;~ 		ScanDir("I:\DC\DC5FL\KrkrDump", "r:\KrkrDump_dup")
 ;~ 		ScanDir("I:\DC\DC5PH_M\KrkrDump", "r:\KrkrDump_dup")
+	Case 3
+		ScanDir("W:\とける風花とシロうさぎ")
+		ScanDir("R:\新建文件夹", "r:\KrkrDump_dup")
+
 EndSwitch
 FileClose($scanedlist)
 ;~ ExtractByList("R:\krdlist.txt")

@@ -1,0 +1,66 @@
+class _KrkrDump_inputString_Dialog extends WIN32GenericDialogEX {
+	function _KrkrDump_inputString_Dialog(Result, prompt, lastinput) {
+		super.WIN32GenericDialogEX(%[
+			title: "KrkrDumpInput-" + System.exePath,
+			width: 200,
+			fontSize: 11,
+			fontFace: "Microsoft YaHei",
+			itemtexts: %[IDOK => "OK", IDCANCEL => "Cancel"]
+		]);
+		addLText(prompt);
+		nextLine();
+		addLineInput(%[id: "Input", nolabel: 1], , string(lastinput));
+		nextLine();
+		addTextInput(%[id: "Result", nolabel: 1], 60, , string(Result));
+		getLastItem().style &= ~(ES_AUTOHSCROLL|WS_HSCROLL);
+		nextLine();
+		addDefPush(IDOK, makeStepRight(1, 60), 8);
+		addButton(IDCANCEL, makeStepRight(0, 60), 8);
+	}
+
+	function finalize() {
+		super.finalize(...);
+	}
+	
+	function onInit() {
+		super.onInit(...);
+		setCenterPosition(global.Window.mainWindow);
+		sendItemMessage("Input", EM_SETSEL, 0, -1);
+		setItemFocus("Input");
+	}
+
+	function open() {
+		var local0 = super.open(...);
+		if (local0.result == IDOK) {
+			return string(local0.items.Input);
+		}
+	}
+}
+this._KrkrDump_inputString_Dialog = _KrkrDump_inputString_Dialog;
+Krkr2CompatUtils.requireWIN32Dialog();
+
+&System.KrkrDumpinputString = function() {
+	var local0 = new _KrkrDump_inputString_Dialog(...);
+	var local1;
+	var local2 = 0;
+	var local3 = !global.Window.mainWindow ? new Window() : void;
+	if (local3) {
+		this.System.exitOnWindowClose <-> local2;
+	}
+	try {
+		local1 = local0.open(null);
+	} catch (e) {
+		invalidate(local0);
+		if (local3) {
+			invalidate(local3);
+			this.System.exitOnWindowClose <-> local2;
+		}
+		throw e;
+	}
+	invalidate(local0);
+	if (local3) {
+		invalidate(local3);
+		this.System.exitOnWindowClose <-> local2;
+	}
+	return local1;
+} incontextof global;

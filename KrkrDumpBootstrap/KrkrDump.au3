@@ -137,9 +137,12 @@ Func ExecScript($path)
 	KrkrDumpExtract("ExecScript:" & $path)
 EndFunc   ;==>ExecScript
 Func KrkrDumpExtract($name)
-	ConsoleWrite('@@ Debug(' & @ScriptLineNumber & ') : $name = ' & $name & @CRLF) ;### Debug Console
+;~ 	ConsoleWrite('@@ Debug(' & @ScriptLineNumber & ') : $name = ' & $name & @CRLF) ;### Debug Console
 	WinWait("KrkrDumpInput", "LastMSG")
 	ControlSetText("KrkrDumpInput", "LastMSG", "[CLASS:Edit; INSTANCE:1]", $name)
 	ControlClick("KrkrDumpInput", "LastMSG", "[CLASS:Button; INSTANCE:1]")
 	WinWait("KrkrDumpInput", "LastMSG")
+	Local $ret = ControlGetText("KrkrDumpInput", "LastMSG", "[CLASS:Edit; INSTANCE:2]")
+;~ 	ConsoleWrite('@@ Debug(' & @ScriptLineNumber & ') : $ret = ' & $ret & @CRLF) ;### Debug Console
+	Return $ret
 EndFunc   ;==>KrkrDumpExtract

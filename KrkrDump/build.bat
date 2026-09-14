@@ -34,9 +34,9 @@
 @cd %CURPWD%
 @cl.exe /nologo ^
 	dllmain.cpp ^
-	/Fe:..\KrkrDumpBootstrap\bin\KrkrDump.dll ^
-	/Fd:..\KrkrDumpBootstrap\bin\KrkrDump.pdb ^
-	/Fo:..\KrkrDumpBootstrap\bin\KrkrDump.obj ^
+	/Fe:..\KrkrDumpBootstrap\bin\KrkrDump.new.dll ^
+	/Fd:..\KrkrDumpBootstrap\bin\KrkrDump.new.pdb ^
+	/Fo:..\KrkrDumpBootstrap\bin\KrkrDump.new.obj ^
 	/LD ^
 	/I"T:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\um" ^
 	/I"T:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\shared" ^
@@ -57,6 +57,9 @@
 	/LIBPATH:".\libs" ^
 	AllInOne_release.lib ^
 	Shell32.lib Comdlg32.lib User32.lib
+@cd ..\KrkrDumpBootstrap\bin\
+@ren KrkrDump.dll KrkrDump.old.dll
+@type KrkrDump.new.dll >KrkrDump.dll
 @cd %CURPWD%
 @goto :EOF
 

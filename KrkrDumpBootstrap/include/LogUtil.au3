@@ -75,7 +75,6 @@ Func ParseLog($ini, $exepath, $name, $exename)
 	EndIf
 EndFunc   ;==>ParseLog
 Func MoveLog($exepath, $logpath)
-	ConsoleWrite('@@ Debug(' & @ScriptLineNumber & ') : $logpath = ' & $logpath & @CRLF) ;### Debug Console
 	FileChangeDir($exepath)
 	If FileExists($KrkrDumplog) Then
 		Local $line = FileRead($KrkrDumplog, 38)

@@ -1,7 +1,6 @@
 rem()/*
 @cls
 @rem bat start
-call d:\tools\open++\e\xcmd.cmd
 @cd /d %~dp0
 @set V0=%0
 @echo.%V0%

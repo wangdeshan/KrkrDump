@@ -65,13 +65,16 @@ EndFunc   ;==>MergListAll
 Func MergList($gamename)
 	Local $base = $HxNameGarbroBase & $gamename & ".txt"
 	Local $dest = $HxNameBase & $gamename & "_out.txt"
-	If FileExists($HxNameGarbroBase & $gamename & "_out.txt") Then FileMove($HxNameGarbroBase & $gamename & "_out.txt", $dest, 8 + 1)
-
 	Local $fold = $HxNameBase & $gamename & "_old.txt"
-	If FileExists($HxNameGarbroBase & $gamename & "_old.txt") Then FileMove($HxNameGarbroBase & $gamename & "_old.txt", $fold, 8 + 1)
-
 	Local $dump = $HxNameBase & $gamename & ".txt"
 	Local $dumx = $HxNameBase & $gamename & ".prev"
+	
+	If FileExists($HxNameGarbroBase & $gamename & "_out.txt") Then
+		FileMove($HxNameGarbroBase & $gamename & "_out.txt", $dest, 8 + 1)
+	EndIf
+	If FileExists($HxNameGarbroBase & $gamename & "_old.txt") Then
+		FileMove($HxNameGarbroBase & $gamename & "_old.txt", $fold, 8 + 1)
+	EndIf
 
 	Local $dict = ObjCreate('Scripting.Dictionary')
 	LoadListToDict($dict, $base)
@@ -79,6 +82,7 @@ Func MergList($gamename)
 	LoadListToDict($dict, $dest)
 	LoadListToDict($dict, $dump)
 	SaveList($dict, $dest)
+	
 	FileMove($base, $fold, 8 + 1)
 	FileMove($dest, $base, 8 + 1)
 	FileMove($dump, $dumx, 8 + 1)
@@ -117,7 +121,7 @@ EndFunc   ;==>LoadListToDict
 Func SaveList($dict, $dest = "R:\HxNames.lst")
 	ConsoleWrite('SaveList => ' & $dest & @CRLF) ;### Debug Console
 	Local $lines = $dict.Keys
-	SortNameHash($lines)
+;~ 	SortNameHash($lines)
 	WriteArray($dest, $lines)
 EndFunc   ;==>SaveList
 Func SaveBaseList($dest = "R:\HxNames.lst")

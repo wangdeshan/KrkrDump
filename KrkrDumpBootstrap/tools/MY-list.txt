@@ -1,0 +1,6 @@
+script_zoomblur.tjs
+gridchain.tjs
+softcursor.tjs
+voiceeffect.tjs
+AffineSourceLive2D.tjs
+D3DAffineSourceLive2D.tjs

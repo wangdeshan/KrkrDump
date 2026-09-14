@@ -26,6 +26,29 @@ If WinExists($ScriptTitle) Then
 EndIf
 AutoItWinSetTitle($ScriptTitle)
 
+Global $logfile = 'R:\KrkrDumpBootstrapRunlog.txt'
+Global $hlogfile = -1
+Global $loghasnew = False
+
+AdlibRegister('_Flushlog', 500)
+Func _Flushlog()
+	If $loghasnew Then
+		If $hlogfile = -1 Then $hlogfile = FileOpen($logfile, 1 + 8 + 256)
+		FileFlush($hlogfile)
+		$loghasnew = False
+	EndIf
+EndFunc   ;==>_Flushlog
+Func _ConsoleWrite($data)
+	If FileExists($logfile) = 0 Then
+		FileClose($hlogfile)
+		$hlogfile = -1
+	EndIf
+	If $hlogfile = -1 Then $hlogfile = FileOpen($logfile, 1 + 8 + 256)
+	FileWrite($hlogfile, $data)
+	$loghasnew = True
+	Return ConsoleWrite($data)
+EndFunc   ;==>_ConsoleWrite
+
 main()
 
 Func main()
@@ -38,7 +61,6 @@ Func main()
 			Local $fpath = $p & $n & $x
 			For $i = 65 To 90 ;A-Z
 				Local $tpath = Chr($i) & ":" & $fpath
-				ConsoleWrite('@@ Debug(' & @ScriptLineNumber & ') : $tpath = ' & $tpath & @CRLF) ;### Debug Console
 				If FileExists($tpath) Then
 					$logname = $tpath
 					ExitLoop
@@ -73,10 +95,10 @@ Func main()
 	Local $cfgpath = $exepath & $KrkrDumpcfg
 	Local $cx_info = $exepath & $gamename & $HxInfoName
 	Local $hxname = $HxNameBase & $gamename & ".txt"
-	
+
 	FileChangeDir($exepath)
 	
-	$ScriptTitle = "KrkrDumpWatcher_" & $exename
+	$ScriptTitle = "KrkrDumpWatcher_" & $gamename
 	If WinExists($ScriptTitle) Then
 		MsgBox(0, 0, $exename & " 运行中 请先关闭后重试")
 		Exit 128
@@ -101,38 +123,69 @@ Func main()
 	Local $dumpkey = True
 	If FileExists($cx_info) Then $dumpkey = False
 	If FileExists($hxname) Then MergOne($n)
-	
-	CopyBinaryToGamePath($exepath)
+
 	WriteConfig($cfgpath, $dumpdir, $dumpkey, $hxname)
 	MoveLog($exepath, $logsdir)
 
 	Local $pid = RunLoader($exename, $exepath, $usele)
-	Watchlogs($pid, $exepath, $KrkrDumplog)
+
+	Watchlogs($pid, $KrkrDumplog, $hxname, $gamename)
 	If $dumpkey Then ParseLog($cx_info, $exepath, $n, $exename)
 	MoveLog($exepath, $logsdir)
 	MergOne($n)
 EndFunc   ;==>main
-Func Watchlogs($pid, $exepath, $log1)
-	Local $pid2 = Run($tail & " " & "-n +0 -F " & $log1 & "", $exepath, @SW_HIDE)
-	While ProcessExists($pid)
-		Sleep(1000)
+Func Watchlogs($pid, $log1, $log2, $gamename)
+	Local $base = $HxNameGarbroBase & $gamename & ".txt"
+	Local $dict = ObjCreate('Scripting.Dictionary')
+
+	LoadListToDict($dict, $HxNamePublic)
+	LoadListToDict($dict, $base)
+
+	Local $flag = False
+	Local $f1 = -1
+	Local $f2 = -1
+	Local $txt1
+	Local $txt2
+	While 1
+		If $f1 = -1 Then $f1 = FileOpen($log1)
+		If $f2 = -1 Then $f2 = FileOpen($log2)
+		While 1
+			$txt1 = FileReadLine($f1)
+			If @error Then ExitLoop
+			ConsoleWrite($txt1 & @CRLF)
+		WEnd
+		While 1
+			$txt2 = FileReadLine($f2)
+			If @error Then ExitLoop
+			Local $key = StringStripWS($txt2, 1 + 2)
+			If $key = "" Then ContinueLoop
+			If $dict.exists($key) Then ContinueLoop
+			$dict.add($key, 1)
+			FileWriteLine($base, $key)
+			ConsoleWrite($txt2 & @CRLF)
+		WEnd
+		If $txt1 = "" And $txt2 = "" Then
+			If ProcessExists($pid) Then
+				Sleep(1000)
+			ElseIf $flag Then
+				ExitLoop
+			Else
+				Sleep(1000)
+				$flag = True
+			EndIf
+		EndIf
 	WEnd
-	ProcessClose($pid2)
+	FileClose($f1)
+	FileClose($f2)
 EndFunc   ;==>Watchlogs
-Func CopyBinaryToGamePath($exepath)
-;~ 	FileInstall("KrkrDump.dll", $exepath & $KrkrDumpdll, 1)
-;~ 	FileInstall("KrkrDumpLoader.exe", $exepath & $KrkrDumpexe, 1)
-	FileCopy($KrkrDumpbinpath & "\" & $KrkrDumpdll, $exepath & $KrkrDumpdll, 1 + 8)
-	FileCopy($KrkrDumpbinpath & "\" & $KrkrDumpexe, $exepath & $KrkrDumpexe, 1 + 8)
-EndFunc   ;==>CopyBinaryToGamePath
 Func RunLoader($exename, $exepath, $usele = False)
 	FileChangeDir($exepath)
 	FileDelete($KrkrDumplog)
 	Local $pid
 	If $usele Then
-		$pid = Run($leproc & " " & $leguid & " " & $KrkrDumpexe & ' "' & $exename & '"', $exepath, @SW_HIDE)
+		$pid = Run($leproc & " " & $leguid & ' ' & $KrkrDumpbinpath & "\" & $KrkrDumpexe & ' "' & $exepath & "\" & $exename & '"', $exepath, @SW_HIDE)
 	Else
-		$pid = Run($exepath & "\" & $KrkrDumpexe & ' "' & $exename & '"', $exepath, @SW_HIDE)
+		$pid = Run($KrkrDumpbinpath & "\" & $KrkrDumpexe & ' "' & $exepath & "\" & $exename & '"', $exepath, @SW_HIDE)
 	EndIf
 	ConsoleWrite('@@ Debug(' & @ScriptLineNumber & ') : $pid = ' & $pid & @CRLF) ;### Debug Console
 	Local $rc = 0
@@ -152,3 +205,5 @@ Func IsNeedLocaleEmulator($logname)
 	If FileExists($logname & ".le.config") Then Return True
 	Return False
 EndFunc   ;==>IsNeedLocaleEmulator
+
+

@@ -1,13 +1,12 @@
 #AutoIt3Wrapper_AU3Check_Parameters=-q -d -w 1 -w 2 -w 3 -w 4 -w 5 -w 6
 
-#include<config.au3>
+#include<include\config.au3>
 
 #include<array.au3>
 
 FileChangeDir(@ScriptDir)
 
 Global $ini = "E:\DC\DC5\DC5.HxCryptInfo.ini"
-Const $Compiler = @ScriptDir & "\SchemeTool\Roslyn\csc.exe"
 Const $reference[] = ["GameRes.dll", "ArcFormats.dll"]
 
 If $cmdline[0] Then $ini = FileGetLongName($cmdline[1])

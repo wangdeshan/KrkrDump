@@ -28,7 +28,6 @@ static HMODULE g_hEXE;
 static HMODULE g_hDLL;
 
 static std::wstring g_exePath;
-static std::wstring g_dllPath;
 
 static Log::Logger g_logger;
 
@@ -767,14 +766,38 @@ void PatchSignatureCheck(HMODULE hModule)
 	PVOID searchBase = (PVOID)((UINT_PTR)base + section->VirtualAddress);
 	DWORD searchSize = section->Misc.VirtualSize;
 
-	PVOID pfnCheckSignature = PE::SearchPattern(searchBase, searchSize, CHECKSIGNATURE_SIG, CHECKSIGNATURE_SIG_LEN);
+	g_logger.WriteLine(L"SIGCHK moduleBase -> (%p)",base);
+	g_logger.WriteLine(L"SIGCHK searchBase -> (%p)",searchBase);
+	g_logger.WriteLine(L"SIGCHK searchSize -> (%lu)",searchSize);
 
+	PVOID pfnCheckSignature = PE::SearchPattern(searchBase, searchSize, CHECKSIGNATURE_SIG, CHECKSIGNATURE_SIG_LEN);
 	if (pfnCheckSignature)
 	{
+		g_logger.WriteLine(L"SIGCHK 1 found -> (%p)",pfnCheckSignature);
 		PVOID patchAddr = (PVOID)((LONG_PTR)pfnCheckSignature + 8);
 		BYTE patchData[] = { 0xEB, 0x0F };
-
 		PE::WriteMemory(patchAddr, patchData, sizeof(patchData));
+		g_logger.WriteLine(L"SIGCHK 1 Patched");
+	}
+
+	PVOID pfnCheckSignature2 = PE::SearchPattern(searchBase, searchSize, CHECKSIGNATURE2_SIG, CHECKSIGNATURE2_SIG_LEN);
+	if (pfnCheckSignature2)
+	{
+		g_logger.WriteLine(L"SIGCHK 2 found -> (%p)",pfnCheckSignature2);
+		PVOID patchAddr = (PVOID)((LONG_PTR)pfnCheckSignature2);
+		BYTE patchData[] = { 0x74, 0x00 };
+		PE::WriteMemory(patchAddr, patchData, sizeof(patchData));
+		g_logger.WriteLine(L"SIGCHK 3 Patched");
+	}
+
+	PVOID pfnCheckSignature3 = PE::SearchPattern(searchBase, searchSize, CHECKSIGNATURE3_SIG, CHECKSIGNATURE3_SIG_LEN);
+	if (pfnCheckSignature3)
+	{
+		g_logger.WriteLine(L"SIGCHK 3 found -> (%p)",pfnCheckSignature3);
+		PVOID patchAddr = (PVOID)((LONG_PTR)pfnCheckSignature3);
+		BYTE patchData[] = { 0xB3, 0x01 };
+		PE::WriteMemory(patchAddr, patchData, sizeof(patchData));
+		g_logger.WriteLine(L"SIGCHK 3 Patched");
 	}
 }
 
@@ -1714,7 +1737,7 @@ void Krkr2BcbFastCallTVPCreateStreamDetour()
 }
 
 
-void LoadConfiguration()
+void LoadConfiguration(std::wstring cfgPath)
 {
 	g_logLevel = 0;
 	g_truncateLog = false;
@@ -1728,8 +1751,7 @@ void LoadConfiguration()
 	g_excludeExtensions.clear();
 	g_decryptSimpleCrypt = false;
 
-	std::wstring jsonPath = Path::ChangeExtension(g_dllPath, L"json");
-	std::string json = File::ReadAllText(jsonPath);
+	std::string json = File::ReadAllText(cfgPath);
 
 	cJSON* jRoot = cJSON_Parse(json.c_str());
 
@@ -1796,7 +1818,7 @@ void LoadConfiguration()
 						g_outputPath += L'\\';
 					}
 
-					g_logger.WriteLine(L"Output Directory Path = \"%s\"", g_outputPath.c_str());
+					g_logger.WriteLine(L"[KrkrDump] OUT Path = \"%s\"", g_outputPath.c_str());
 				}
 				else
 				{
@@ -2159,10 +2181,9 @@ void OnStartup()
 {
 	std::wstring exePath = Util::GetModulePathW(g_hEXE);
 	std::wstring dllPath = Util::GetModulePathW(g_hDLL);
-	std::wstring cfgPath = Path::ChangeExtension(dllPath, L"json");
-
-	// Build log file path
-	auto logPath = Path::GetDirectoryName(dllPath) + L"\\" + Path::GetFileNameWithoutExtension(dllPath) + L".log";
+	std::wstring GameDir = Path::GetDirectoryName(exePath);
+	std::wstring cfgPath = GameDir + L"\\KrkrDump.json";
+	std::wstring logPath = GameDir + L"\\KrkrDump.log";
 
 	File::Delete(logPath);
 
@@ -2174,16 +2195,16 @@ void OnStartup()
 	g_logger.WriteLine(L"[KrkrDump] DLL Path = \"%s\"", dllPath.c_str());
 	g_logger.WriteLine(L"[KrkrDump] Log Path = \"%s\"", logPath.c_str());
 	g_logger.WriteLine(L"[KrkrDump] Cfg Path = \"%s\"", cfgPath.c_str());
+	g_logger.WriteLine(L"[KrkrDump] Game Dir = \"%s\"", GameDir.c_str());
 
 
 	g_exePath = std::move(exePath);
-	g_dllPath = std::move(dllPath);
 
 	// Started
 
 	try
 	{
-		LoadConfiguration();
+		LoadConfiguration(cfgPath);
 
 		g_logger.WriteLine(L"Configuration loaded");
 	}
